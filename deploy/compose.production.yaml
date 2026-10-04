@@ -1,0 +1,13 @@
+services:
+  notify:
+    image: personal-notify:0.2.3
+    environment:
+      NOTIFY_ALEXA_CODE_FILE: /run/secrets/alexa-access-code.txt
+    volumes:
+      - ./secrets/alexa-access-code.txt:/run/secrets/alexa-access-code.txt:ro
+    healthcheck:
+      test: ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
