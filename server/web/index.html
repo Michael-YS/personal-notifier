@@ -1,3 +1,69 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Personal Notify · 设备配对</title><link rel="stylesheet" href="/pair.css"><script src="/pair.js" defer></script></head>
-<body><main><p class="eyebrow">PERSONAL NOTIFY</p><h1>把通知送到你的手机</h1><p>输入管理密码生成二维码，然后在 Android App 中点击「扫码配对」。</p><form id="pair"><label for="password">管理密码</label><input id="password" type="password" autocomplete="current-password" required maxlength="256"><label for="device">新设备名称</label><input id="device" required pattern="[A-Za-z0-9_-]{1,64}" maxlength="64"><small>每台设备使用不同名称，例如 phone、tablet。</small><button id="generate">生成配对二维码</button></form><p id="status" role="status" aria-live="polite"></p><section id="result" hidden><img id="qr" alt="一次性设备配对二维码"><p id="expiry"></p><small>二维码仅供自己扫描，请勿分享。失效后可重新生成。</small></section></main></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f0f5fc">
+  <title>设备配对 · Personal Notify</title>
+  <link rel="stylesheet" href="/pair.css">
+  <script src="/pair.js" defer></script>
+</head>
+<body>
+  <div class="page">
+    <header class="brand">
+      <span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+      <span>Personal Notify</span>
+      <span class="brand-caption">你的私人通知入口</span>
+    </header>
+    <main>
+      <div class="intro">
+        <h1>连接你的下一台设备。</h1>
+        <p>配对一次，让重要消息随时找到你。</p>
+      </div>
+      <div class="pairing-panel">
+        <section class="setup" aria-labelledby="setup-title">
+          <h2 id="setup-title">添加设备</h2>
+          <p class="section-description">输入管理密码，给这台设备起个名字。</p>
+          <form id="pair">
+            <div class="field">
+              <label for="password">管理密码</label>
+              <input id="password" type="password" autocomplete="current-password" placeholder="输入你的配对管理密码" required maxlength="256" aria-describedby="password-help">
+              <small id="password-help">使用服务器设置的配对密码。</small>
+            </div>
+            <div class="field">
+              <label for="device">设备名称</label>
+              <input id="device" required pattern="[A-Za-z0-9_-]{1,64}" maxlength="64" spellcheck="false" autocomplete="off" aria-describedby="device-help">
+              <small id="device-help">每台设备用不同名称，可用字母、数字、短横线和下划线。</small>
+            </div>
+            <button id="generate" type="submit"><span>生成配对二维码</span><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <p id="status" role="status" aria-live="polite" aria-atomic="true"></p>
+          </form>
+        </section>
+        <section class="scan" aria-labelledby="scan-title">
+          <div class="scan-heading"><h2 id="scan-title">用手机扫码</h2><span id="scan-state" class="state">等待生成</span></div>
+          <div class="qr-space">
+            <div id="empty" class="empty">
+              <div class="scan-placeholder" aria-hidden="true"><svg viewBox="0 0 80 80" fill="none"><path d="M25 9H9v16m46-16h16v16M9 55v16h16m46-16v16H55" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><rect x="27" y="18" width="26" height="44" rx="5" stroke="currentColor" stroke-width="2"/><path d="M36 55h8M33 27h14m-14 7h14m-14 7h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+              <p>二维码将在这里显示</p>
+              <small>填写设备信息，即可开始配对。</small>
+            </div>
+            <div id="result" hidden>
+              <div class="qr-frame"><img id="qr" alt="一次性设备配对二维码"></div>
+              <p id="paired-device" class="paired-device"></p>
+              <p id="expiry" class="expiry"></p>
+            </div>
+          </div>
+          <p class="scan-instruction">打开 Android App，点击「扫码配对」，<br>扫描二维码并确认服务地址。</p>
+          <p class="privacy-note"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="2" stroke="currentColor"/><path d="M5 7V5a3 3 0 0 1 6 0v2" stroke="currentColor"/></svg>二维码仅供你自己使用，请勿分享。</p>
+        </section>
+      </div>
+      <ol class="steps" aria-label="配对步骤">
+        <li><span class="step-number">1</span><div><strong>生成二维码</strong><p>使用管理密码添加新设备。</p></div></li>
+        <li><span class="step-number">2</span><div><strong>在 App 中扫描</strong><p>确认服务地址，保存绑定。</p></div></li>
+        <li><span class="step-number">3</span><div><strong>开始接收通知</strong><p>App 显示「已绑定」即可使用。</p></div></li>
+      </ol>
+    </main>
+    <footer>通知历史留在手机上。每台设备独立配对。</footer>
+  </div>
+</body>
+</html>
