@@ -15,6 +15,15 @@ body { margin: 0; }
 .brand-icon { display: grid; place-items: center; width: 38px; height: 38px; background: var(--blue); color: white; border-radius: 12px; }
 .brand-icon svg { width: 23px; height: 23px; }
 .brand-caption { margin-left: auto; font-size: 13px; font-weight: 400; color: var(--muted); }
+.account { display: flex; align-items: center; gap: 16px; margin-left: auto; font-size: 13px; color: var(--muted); font-weight: 400; }
+.account button { margin: 0; width: auto; padding: 9px 12px; color: var(--blue); background: transparent; border: 1px solid #c9d6e6; font-size: 13px; }
+.account button:hover { background: #e1eaf7; }
+.login-page { max-width: 520px; padding-top: 60px; }
+.login-panel { margin-top: 48px; padding: 36px; background: white; border: 1px solid #dce6f3; border-radius: 22px; }
+.login-intro { margin-bottom: 32px; }
+.login-intro h1 { font-size: 30px; }
+.login-intro p, .login-note { font-size: 13px; line-height: 1.8; color: var(--muted); }
+.login-note { margin: 16px 0 0; padding-top: 20px; border-top: 1px solid #e4ebf5; }
 .intro { margin: 58px 0 30px; }
 h1 { margin: 0; font-size: clamp(28px, 3.5vw, 40px); font-weight: 650; letter-spacing: -1px; line-height: 1.4; }
 .intro p { margin: 12px 0 0; color: var(--muted); font-size: 16px; }
@@ -35,8 +44,8 @@ button { display: flex; justify-content: center; align-items: center; gap: 12px;
 button svg { width: 19px; height: 19px; }
 button:hover { background: #1855c0; }
 button:disabled { cursor: wait; background: #718fbf; }
-#status, #push-status { min-height: 40px; margin: 14px 0 0; font-size: 13px; color: var(--muted); line-height: 1.65; }
-#status[data-state="error"], #push-status[data-state="error"] { color: #ab3443; }
+#status, #push-status, #login-status { min-height: 40px; margin: 14px 0 0; font-size: 13px; color: var(--muted); line-height: 1.65; }
+#status[data-state="error"], #push-status[data-state="error"], #login-status[data-state="error"], #account-status { color: #ab3443; }
 #status[data-state="ready"], #push-status[data-state="ready"] { color: #236550; }
 .push-panel { margin-top: 30px; padding: 30px; background: white; border: 1px solid #dce6f3; border-radius: 22px; }
 #push-key { font-family: monospace; }
@@ -65,6 +74,9 @@ button:disabled { cursor: wait; background: #718fbf; }
 footer { margin-top: 45px; font-size: 12px; color: var(--muted); text-align: center; }
 @media (max-width: 700px) {
   .page { padding: 24px 20px; }
+  .login-panel { margin-top: 36px; padding: 28px 24px; }
+  .account { gap: 8px; }
+  .account > span { display: none; }
   .brand-caption { display: none; }
   .intro { margin-top: 38px; }
   .pairing-panel { grid-template-columns: 1fr; }

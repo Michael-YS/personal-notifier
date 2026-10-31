@@ -13,23 +13,19 @@
     <header class="brand">
       <span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
       <span>Personal Notify</span>
-      <span class="brand-caption">你的私人通知入口</span>
+      <div class="account"><span>管理台</span><button id="logout" type="button">退出登录</button></div>
     </header>
     <main>
       <div class="intro">
-        <h1>连接你的下一台设备。</h1>
-        <p>配对一次，让重要消息随时找到你。</p>
+        <h1>管理你的通知入口。</h1>
+        <p>添加设备，或为调用方创建发送密钥。</p>
+        <p id="account-status" role="status" aria-live="polite"></p>
       </div>
       <div class="pairing-panel">
         <section class="setup" aria-labelledby="setup-title">
           <h2 id="setup-title">添加设备</h2>
-          <p class="section-description">输入管理密码，给这台设备起个名字。</p>
+          <p class="section-description">给这台设备起个名字，生成二维码后用 App 扫描。</p>
           <form id="pair">
-            <div class="field">
-              <label for="password">管理密码</label>
-              <input id="password" type="password" autocomplete="current-password" placeholder="输入你的配对管理密码" required maxlength="256" aria-describedby="password-help">
-              <small id="password-help">使用服务器设置的配对密码。</small>
-            </div>
             <div class="field">
               <label for="device">设备名称</label>
               <input id="device" required pattern="[A-Za-z0-9_-]{1,64}" maxlength="64" spellcheck="false" autocomplete="off" aria-describedby="device-help">
@@ -58,7 +54,7 @@
         </section>
       </div>
       <ol class="steps" aria-label="配对步骤">
-        <li><span class="step-number">1</span><div><strong>生成二维码</strong><p>使用管理密码添加新设备。</p></div></li>
+        <li><span class="step-number">1</span><div><strong>生成二维码</strong><p>为新设备选择独立名称。</p></div></li>
         <li><span class="step-number">2</span><div><strong>在 App 中扫描</strong><p>确认服务地址，保存绑定。</p></div></li>
         <li><span class="step-number">3</span><div><strong>开始接收通知</strong><p>App 显示「已绑定」即可使用。</p></div></li>
       </ol>
@@ -66,10 +62,6 @@
         <h2 id="push-title">创建 push_key</h2>
         <p class="section-description">为调用方创建发送密钥，用于 /notify 的 Bearer 鉴权。拥有密钥即可向所有设备发送通知，请妥善保管。</p>
         <form id="push-key-form">
-          <div class="field">
-            <label for="push-password">管理密码</label>
-            <input id="push-password" type="password" autocomplete="current-password" required maxlength="256" placeholder="输入你的配对管理密码">
-          </div>
           <button id="create-push-key" type="submit">Create push_key</button>
         </form>
         <p id="push-status" role="status" aria-live="polite" aria-atomic="true"></p>

@@ -55,7 +55,7 @@ uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
 | `NOTIFY_STATE_FILE` | 设备状态路径，默认 `data/devices.json` |
 | `GOOGLE_APPLICATION_CREDENTIALS` | 服务账号 JSON 路径 |
 | `NOTIFY_PUBLIC_URL` | 外部 HTTPS 根地址，扫码配对时必需 |
-| `NOTIFY_PAIR_PASSWORD` | 独立的配对管理密码，至少 16 字符；留空禁用配对 |
+| `NOTIFY_PAIR_PASSWORD` | 独立的管理密码，至少 16 字符；留空禁用网页登录、配对和创建发送密钥 |
 | `NOTIFY_ALEXA_CODE_FILE` | 可选，Alexa access code 文件路径 |
 
 `.env` 中的设备 JSON 应用单引号包裹，例如 `NOTIFY_DEVICE_KEYS='{"my-phone":"独立的随机密钥"}'`。设备名只能包含字母、数字、下划线和短横线，长度 1–64。即使主要使用扫码配对，当前配置也要求至少一个静态设备；未注册的静态设备不会参与广播。
@@ -81,7 +81,7 @@ Windows 使用 `gradlew.bat`。APK 输出为 `android/app/build/outputs/apk/debu
 
 安装到具备 Google Play 服务、能连接 FCM 网络的手机。首次打开授予通知权限，然后选择：
 
-- **扫码配对**：打开自己的服务网页，输入管理密码和新的设备名，生成二维码；App 点击“扫码配对”，扫描并确认服务地址。
+- **扫码配对**：打开自己的服务网页，使用管理密码登录，输入新的设备名并生成二维码；App 点击“扫码配对”，扫描并确认服务地址。
 - **手工绑定**：填入 HTTPS 服务地址、`NOTIFY_DEVICE_KEYS` 中的设备名和对应绑定密钥。
 
 状态显示“已绑定”后可发通知。每台手机使用不同设备名；同一设备名后注册的 token 会覆盖原值。二维码 5 分钟过期、仅可兑换一次，服务重启后未兑换二维码失效。扫码设备凭证摘要存于服务端，原始凭证由手机保存。网页支持新增配对和创建发送密钥，不提供删除设备管理。
@@ -90,7 +90,9 @@ App 在打开、FCM token 更新时重新注册，并通过 WorkManager 每天�
 
 ## 4. 发送通知
 
-网页 dashboard 的「Create push_key」可使用配对管理密码创建额外发送密钥，也可调用 `POST /push-keys`，JSON 请求体为 `{"password":"你的管理密码"}`。成功返回 HTTP 201 和 `{"push_key":"..."}`；原始密钥仅在创建响应中返回，网页支持复制，请立即保存。创建接口与配对接口共享每分钟 10 次的管理请求限制；未配置管理密码时返回 503。
+网页先使用配对管理密码登录，进入 dashboard 后可直接配对设备或点击「Create push_key」创建额外发送密钥，无需重复输入密码。登录会话使用 Secure、HttpOnly、SameSite=Strict Cookie，固定有效期 8 小时；退出会撤销服务端会话，服务重启后需重新登录。会话只保存在当前服务进程内，不新增数据库。不要将管理密码存入浏览器本地存储。
+
+API 调用方仍可调用 `POST /push-keys`，JSON 请求体为 `{"password":"你的管理密码"}`。成功返回 HTTP 201 和 `{"push_key":"..."}`；原始密钥仅在创建响应中返回，网页支持复制，请立即保存。登录与使用密码的管理请求共享每分钟 10 次的限制；未配置管理密码时返回 503。网页会话调用管理接口需带 `X-Notify-Request: dashboard` 请求头，并校验浏览器 Origin；手机兑换二维码、注册和 Bearer 发送接口保持原有鉴权。
 
 这些密钥可替代调用方的 `NOTIFY_SEND_KEY`，使用相同的 Bearer 鉴权和发送权限；不能用来绑定设备。原有环境变量密钥和其他已创建密钥继续有效。服务端仅将 SHA-256 摘要原子写入设备状态文件旁的 `<设备状态文件名去掉扩展名>.push-keys.json`，应与设备状态一起持久化并保密。当前没有网页撤销功能；需要撤销全部网页创建的密钥时，停止服务、删除该文件后重启（不影响 `NOTIFY_SEND_KEY`）。
 

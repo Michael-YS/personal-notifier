@@ -69,7 +69,7 @@ def test_push_keys_persist_and_only_authorize_sending(gateway):
 
 def test_admin_validation_and_shared_rate_limit(gateway):
     client, _, settings = gateway
-    assert client.post("/push-keys", json={}).status_code == 422
+    assert client.post("/push-keys", json={}).status_code == 401
     assert (
         client.post(
             "/push-keys", json={"password": settings.pair_password, "extra": "x"}

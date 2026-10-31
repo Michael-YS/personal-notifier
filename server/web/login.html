@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f0f5fc">
+  <title>登录 · Personal Notify</title>
+  <link rel="stylesheet" href="/pair.css">
+  <script src="/login.js" defer></script>
+</head>
+<body>
+  <div class="page login-page">
+    <header class="brand">
+      <span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M10 21h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+      <span>Personal Notify</span>
+    </header>
+    <main class="login-panel">
+      <div class="login-intro">
+        <h1>登录管理台</h1>
+        <p>添加你的设备，管理通知发送密钥。</p>
+      </div>
+      <form id="login-form">
+        <div class="field">
+          <label for="password">管理密码</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" placeholder="输入管理密码" required maxlength="256" aria-describedby="login-help" autofocus>
+          <small id="login-help">使用服务器设置的配对管理密码。</small>
+        </div>
+        <button id="login-button" type="submit">登录</button>
+        <p id="login-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      </form>
+      <p class="login-note">登录有效期为 8 小时。公用设备使用后，请退出登录。</p>
+    </main>
+    <footer>你的私人通知入口</footer>
+  </div>
+</body>
+</html>

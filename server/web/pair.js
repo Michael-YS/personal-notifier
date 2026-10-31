@@ -32,14 +32,9 @@ form.addEventListener('submit', async (event) => {
   button.disabled = true;
   button.querySelector('span').textContent = '正在生成…';
   showStatus('正在为这台设备生成二维码…', 'loading');
-  const password = document.querySelector('#password');
   try {
-    const response = await fetch('/pairings', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({password: password.value, device: device.value}),
-    });
-    password.value = '';
-    const errors = {401: '管理密码不正确，请重新输入。', 409: '设备名已存在，请换一个新名称。', 429: '请求太频繁，请一分钟后再试。', 503: '配对功能尚未配置，请检查服务器设置。', 422: '请检查设备名称，只能使用字母、数字、短横线和下划线。'};
+    const response = await adminRequest('/pairings', {device: device.value});
+    const errors = {409: '设备名已存在，请换一个新名称。', 429: '请求太频繁，请一分钟后再试。', 503: '配对功能尚未配置，请检查服务器设置。', 422: '请检查设备名称，只能使用字母、数字、短横线和下划线。'};
     if (!response.ok) throw new Error(errors[response.status] || '服务暂不可用，请稍后再试。');
     const data = await response.json();
     imageUrl = URL.createObjectURL(new Blob([data.qr_svg], {type: 'image/svg+xml'}));
@@ -55,13 +50,12 @@ form.addEventListener('submit', async (event) => {
       document.querySelector('#expiry').textContent = `${minutes}:${String(seconds % 60).padStart(2, '0')} 后过期 · 仅可使用一次`;
       if (!seconds) {
         clearQr();
-        showStatus('二维码已过期。重新输入管理密码，再生成一个。', 'expired');
+        showStatus('二维码已过期，请重新生成。', 'expired');
       }
     };
     tick();
     if (Date.now() < deadline) timer = setInterval(tick, 1000);
   } catch (error) {
-    password.value = '';
     showStatus(error instanceof TypeError ? '无法连接服务，请检查网络后重试。' : error.message || '生成失败，请重试。', 'error');
   } finally {
     button.disabled = false;
@@ -70,7 +64,6 @@ form.addEventListener('submit', async (event) => {
 });
 
 const pushForm = document.querySelector('#push-key-form');
-const pushPassword = document.querySelector('#push-password');
 const pushButton = document.querySelector('#create-push-key');
 const pushResult = document.querySelector('#push-result');
 const pushKey = document.querySelector('#push-key');
@@ -87,11 +80,8 @@ pushForm.addEventListener('submit', async (event) => {
   pushButton.textContent = '正在创建…';
   showPushStatus('正在创建发送密钥…', 'loading');
   try {
-    const response = await fetch('/push-keys', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({password: pushPassword.value}),
-    });
-    const errors = {401: '管理密码不正确，请重新输入。', 429: '请求太频繁，请一分钟后再试。', 503: '管理功能尚未配置，请检查服务器设置。', 422: '请检查管理密码。'};
+    const response = await adminRequest('/push-keys', {});
+    const errors = {429: '请求太频繁，请一分钟后再试。', 503: '管理功能尚未配置，请检查服务器设置。'};
     if (!response.ok) throw new Error(errors[response.status] || '创建失败，请稍后再试。');
     const data = await response.json();
     pushKey.value = data.push_key;
@@ -100,10 +90,63 @@ pushForm.addEventListener('submit', async (event) => {
   } catch (error) {
     showPushStatus(error instanceof TypeError ? '连接中断，无法确认创建结果；如已显示旧密钥，它仍可使用。' : error.message || '创建失败，请重试。', 'error');
   } finally {
-    pushPassword.value = '';
     pushButton.disabled = false;
     pushButton.textContent = 'Create push_key';
   }
+});
+
+function clearSensitiveContent() {
+  clearQr();
+  pushKey.value = '';
+  pushResult.hidden = true;
+}
+
+function expireSession() {
+  clearSensitiveContent();
+  window.location.replace('/login?expired=1');
+}
+
+async function adminRequest(path, body, method = 'POST') {
+  const response = await fetch(path, {
+    method, credentials: 'same-origin',
+    headers: {'Content-Type': 'application/json', 'X-Notify-Request': 'dashboard'},
+    ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+  });
+  if (response.status === 401) {
+    expireSession();
+    throw new Error('登录已过期，请重新登录。');
+  }
+  return response;
+}
+
+document.querySelector('#logout').addEventListener('click', async () => {
+  const logout = document.querySelector('#logout');
+  logout.disabled = true;
+  clearSensitiveContent();
+  try {
+    const response = await adminRequest('/session', undefined, 'DELETE');
+    if (!response.ok) throw new Error('退出失败，请重试。');
+    window.location.replace('/login');
+  } catch {
+    document.querySelector('#account-status').textContent = '未能确认退出，请检查网络后重试。';
+    logout.disabled = false;
+  }
+});
+
+// Reload pages restored from browser history so the server checks the session again.
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) {
+    clearSensitiveContent();
+    window.location.reload();
+  }
+});
+
+adminRequest('/session', undefined, 'GET').then(async (response) => {
+  if (!response.ok) throw new Error('Session check failed');
+  const data = await response.json();
+  setTimeout(expireSession, data.expires_in * 1000);
+}).catch(() => {
+  document.querySelector('#account-status').textContent = '无法确认登录状态，请刷新页面重试。';
 });
 
 document.querySelector('#copy-push-key').addEventListener('click', async () => {
