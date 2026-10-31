@@ -68,3 +68,51 @@ form.addEventListener('submit', async (event) => {
     button.querySelector('span').textContent = '生成配对二维码';
   }
 });
+
+const pushForm = document.querySelector('#push-key-form');
+const pushPassword = document.querySelector('#push-password');
+const pushButton = document.querySelector('#create-push-key');
+const pushResult = document.querySelector('#push-result');
+const pushKey = document.querySelector('#push-key');
+const pushStatus = document.querySelector('#push-status');
+
+function showPushStatus(message, state) {
+  pushStatus.textContent = message;
+  pushStatus.dataset.state = state;
+}
+
+pushForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  pushButton.disabled = true;
+  pushButton.textContent = '正在创建…';
+  showPushStatus('正在创建发送密钥…', 'loading');
+  try {
+    const response = await fetch('/push-keys', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({password: pushPassword.value}),
+    });
+    const errors = {401: '管理密码不正确，请重新输入。', 429: '请求太频繁，请一分钟后再试。', 503: '管理功能尚未配置，请检查服务器设置。', 422: '请检查管理密码。'};
+    if (!response.ok) throw new Error(errors[response.status] || '创建失败，请稍后再试。');
+    const data = await response.json();
+    pushKey.value = data.push_key;
+    pushResult.hidden = false;
+    showPushStatus('密钥已创建，请立即复制保存。', 'ready');
+  } catch (error) {
+    showPushStatus(error instanceof TypeError ? '连接中断，无法确认创建结果；如已显示旧密钥，它仍可使用。' : error.message || '创建失败，请重试。', 'error');
+  } finally {
+    pushPassword.value = '';
+    pushButton.disabled = false;
+    pushButton.textContent = 'Create push_key';
+  }
+});
+
+document.querySelector('#copy-push-key').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(pushKey.value);
+    showPushStatus('密钥已复制。', 'ready');
+  } catch {
+    pushKey.focus();
+    pushKey.select();
+    showPushStatus('无法自动复制，已选中密钥，请手动复制。', 'error');
+  }
+});

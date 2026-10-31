@@ -188,8 +188,11 @@ class FcmSender:
 
 
 def create_app(settings=None, sender=None, alexa_sender=None):
+    from server.push_keys import PushKeyStore
+
     settings = settings or Settings.from_env()
     store = DeviceStore(settings.state_file)
+    push_keys = PushKeyStore(settings.state_file)
     sender = sender or FcmSender()
     if alexa_sender is None and settings.alexa_code_file:
         from server.alexa import AlexaSender
@@ -198,7 +201,7 @@ def create_app(settings=None, sender=None, alexa_sender=None):
     app = FastAPI(title="Personal Notify", docs_url=None, redoc_url=None, openapi_url=None)
     from server.pairing import install_pairing
 
-    install_pairing(app, settings, store)
+    install_pairing(app, settings, store, push_keys)
 
     def authenticate(authorization, key):
         expected = f"Bearer {key}".encode()
@@ -225,7 +228,12 @@ def create_app(settings=None, sender=None, alexa_sender=None):
 
     @app.post("/notify")
     def notify(notification: Notification, authorization: str | None = Header(None)):
-        authenticate(authorization, settings.send_key)
+        if not (
+            authorization
+            and authorization.startswith("Bearer ")
+            and push_keys.check(authorization[7:])
+        ):
+            authenticate(authorization, settings.send_key)
         include_alexa = (
             notification.device is None and notification.urgent and alexa_sender is not None
         )

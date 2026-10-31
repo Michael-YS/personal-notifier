@@ -35,9 +35,12 @@ button { display: flex; justify-content: center; align-items: center; gap: 12px;
 button svg { width: 19px; height: 19px; }
 button:hover { background: #1855c0; }
 button:disabled { cursor: wait; background: #718fbf; }
-#status { min-height: 40px; margin: 14px 0 0; font-size: 13px; color: var(--muted); line-height: 1.65; }
-#status[data-state="error"] { color: #ab3443; }
-#status[data-state="ready"] { color: #236550; }
+#status, #push-status { min-height: 40px; margin: 14px 0 0; font-size: 13px; color: var(--muted); line-height: 1.65; }
+#status[data-state="error"], #push-status[data-state="error"] { color: #ab3443; }
+#status[data-state="ready"], #push-status[data-state="ready"] { color: #236550; }
+.push-panel { margin-top: 30px; padding: 30px; background: white; border: 1px solid #dce6f3; border-radius: 22px; }
+#push-key { font-family: monospace; }
+#push-help { margin-top: 8px; }
 .scan { background: #f8faff; border-left: 1px solid #e4ebf5; padding: 38px 34px 26px; text-align: center; }
 .scan-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; }
 .state { padding: 5px 10px; border-radius: 20px; background: #e9eef7; color: #586e8b; font-size: 12px; white-space: nowrap; }

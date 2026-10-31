@@ -15,9 +15,12 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class PairRequest(BaseModel):
+class AdminRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     password: str = Field(min_length=1, max_length=256)
+
+
+class PairRequest(AdminRequest):
     device: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -26,7 +29,7 @@ class RedeemRequest(BaseModel):
     code: str = Field(min_length=32, max_length=128)
 
 
-def install_pairing(app, settings, store):
+def install_pairing(app, settings, store, push_keys):
     tickets = {}
     attempts = deque()
     lock = threading.Lock()
@@ -56,19 +59,30 @@ def install_pairing(app, settings, store):
     def stylesheet():
         return FileResponse(web / "pair.css", media_type="text/css")
 
-    @app.post("/pairings")
-    def create_pairing(request: PairRequest):
+    def authenticate_admin(password):
+        # Called under the shared lock so both admin actions share one rate limit.
         if not settings.pair_password:
             raise HTTPException(503, "Pairing is not configured")
+        now = time.monotonic()
+        while attempts and attempts[0] <= now - 60:
+            attempts.popleft()
+        if len(attempts) >= 10:
+            raise HTTPException(429, "Wait a minute before trying again")
+        attempts.append(now)
+        if not hmac.compare_digest(password.encode(), settings.pair_password.encode()):
+            raise HTTPException(401, "Incorrect password")
+
+    @app.post("/push-keys", status_code=201)
+    def create_push_key(request: AdminRequest):
         with lock:
+            authenticate_admin(request.password)
+            return {"push_key": push_keys.create()}
+
+    @app.post("/pairings")
+    def create_pairing(request: PairRequest):
+        with lock:
+            authenticate_admin(request.password)
             now = time.monotonic()
-            while attempts and attempts[0] <= now - 60:
-                attempts.popleft()
-            if len(attempts) >= 10:
-                raise HTTPException(429, "Wait a minute before trying again")
-            attempts.append(now)
-            if not hmac.compare_digest(request.password.encode(), settings.pair_password.encode()):
-                raise HTTPException(401, "Incorrect password")
             if request.device in settings.device_keys or store.has(request.device):
                 raise HTTPException(409, "Device name already exists; choose a new name")
             for code, (_, deadline) in list(tickets.items()):
