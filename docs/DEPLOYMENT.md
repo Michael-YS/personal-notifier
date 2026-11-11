@@ -2,15 +2,17 @@
 
 ## Docker Compose
 
-准备 `.env` 和 `secrets/firebase-service-account.json`，然后在仓库根目录运行：
+从 `.env.example` 创建 `.env`，按需设置 `CHANNEL_FCM_ENABLED`、`CHANNEL_ALEXA_ENABLED` 和 `CHANNEL_EMAIL_ENABLED`，并准备启用渠道的凭据。然后在仓库根目录运行：
 
 ```sh
 docker compose up -d --build
 ```
 
-容器使用 UID 10001，服务仅绑定宿主机 `127.0.0.1:8000`。设备状态在命名卷 `notify-data` 中，私钥只读挂载。Linux 上请确保容器用户能读取私钥，例如：
+容器使用 UID 10001，服务仅绑定宿主机 `127.0.0.1:8000`。设备状态在命名卷 `notify-data` 中，`secrets/` 目录以只读方式挂载到 `/app/secrets`。Linux 上请确保容器用户可以进入目录并读取启用渠道的文件。启用 FCM 时，例如：
 
 ```sh
+sudo chgrp 10001 secrets
+sudo chmod 710 secrets
 sudo chown 10001:10001 secrets/firebase-service-account.json
 sudo chmod 400 secrets/firebase-service-account.json
 chmod 600 .env
@@ -37,16 +39,16 @@ chmod 600 .env
 
 ## 可选 Alexa
 
-`deploy/compose.production.yaml` 提供健康检查、镜像名和 Alexa 文件挂载。启用前准备 `secrets/alexa-access-code.txt`，并让 UID 10001 可读：
+在 `.env` 中设置 `CHANNEL_ALEXA_ENABLED=true` 和 `NOTIFY_ALEXA_CODE_FILE=secrets/alexa-access-code.txt`。准备凭据并让 UID 10001 可读：
 
 ```sh
 sudo chown 10001:10001 secrets/alexa-access-code.txt
 sudo chmod 400 secrets/alexa-access-code.txt
 
-docker compose -f compose.yaml -f deploy/compose.production.yaml up -d --build --wait
+docker compose up -d --build
 ```
 
-挂载路径均相对于第一个 Compose 文件（根目录的 `compose.yaml`）。不使用 Alexa 时，只使用基础 Compose，或在自己的覆盖配置中移除 Alexa 环境变量和挂载。不要留下指向不存在 code 文件的挂载。
+使用基础 Compose 就能加载该文件。已有的部署如果通过覆盖文件设置容器内路径，Compose 中的 `environment` 会优先于 `env_file`。
 
 ## GHCR 镜像
 

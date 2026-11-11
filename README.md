@@ -51,7 +51,7 @@ uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
 | 环境变量 | 用途 |
 | --- | --- |
 | `NOTIFY_SEND_KEY` | 发送密钥，至少 32 字符 |
-| `NOTIFY_DEVICE_KEYS` | 非空 JSON 对象，设备名 → 独立绑定密钥，每个密钥至少 32 字符 |
+| `NOTIFY_DEVICE_KEYS` | JSON 对象，设备名 → 独立绑定密钥，每个密钥至少 32 字符。启用 FCM 时至少配置一个设备 |
 | `NOTIFY_STATE_FILE` | 设备状态路径，默认 `data/devices.json` |
 | `GOOGLE_APPLICATION_CREDENTIALS` | 服务账号 JSON 路径 |
 | `NOTIFY_PUBLIC_URL` | 外部 HTTPS 根地址，扫码配对时必需 |
@@ -62,7 +62,9 @@ uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
 | `SMTP_PASSWORD` | SMTP 登录密码 |
 | `SUBSCRIBER_EMAIL` | 收件人列表，例如 `[a@example.com, b@example.com]` |
 
-`.env` 中的设备 JSON 应用单引号包裹，例如 `NOTIFY_DEVICE_KEYS='{"my-phone":"独立的随机密钥"}'`。设备名只能包含字母、数字、下划线和短横线，长度 1–64。即使主要使用扫码配对，当前配置也要求至少一个静态设备；未注册的静态设备不会参与广播。
+`.env` 中的 `CHANNEL_FCM_ENABLED`、`CHANNEL_ALEXA_ENABLED`、`CHANNEL_EMAIL_ENABLED` 可分别设为 `true` 或 `false`。未设置开关时兼容旧配置，默认启用 FCM，并根据凭据配置启用 Alexa 和邮件。关闭 FCM 后，指定 `device` 的通知返回 HTTP 409。
+
+`.env` 中的设备 JSON 应用单引号包裹，例如 `NOTIFY_DEVICE_KEYS='{"my-phone":"独立的随机密钥"}'`。设备名只能包含字母、数字、下划线和短横线，长度 1–64。未注册的静态设备不会参与广播。
 
 ```sh
 uv run --env-file .env uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 --no-access-log

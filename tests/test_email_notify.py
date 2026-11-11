@@ -123,3 +123,32 @@ def test_email_routing_and_transport_failure(smtp_env, monkeypatch, tmp_path):
     assert len(attempts) == 2
     assert send(client).status_code == 200
     assert len(attempts) == 2
+
+
+def test_email_only_skips_fcm_and_alexa(smtp_env, monkeypatch, tmp_path):
+    monkeypatch.setenv("NOTIFY_SEND_KEY", "s" * 32)
+    monkeypatch.setenv("NOTIFY_STATE_FILE", str(tmp_path / "devices.json"))
+    monkeypatch.delenv("NOTIFY_DEVICE_KEYS", raising=False)
+    monkeypatch.delenv("NOTIFY_PAIR_PASSWORD", raising=False)
+    monkeypatch.setenv("CHANNEL_FCM_ENABLED", "false")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(tmp_path / "missing-firebase.json"))
+    monkeypatch.setenv("CHANNEL_ALEXA_ENABLED", "false")
+    monkeypatch.setenv("NOTIFY_ALEXA_CODE_FILE", str(tmp_path / "missing-alexa.txt"))
+    monkeypatch.setenv("CHANNEL_EMAIL_ENABLED", "true")
+
+    def fake_email(self, title, body):
+        return [{"channel": "email", "status": "accepted"}]
+
+    monkeypatch.setattr(EmailSender, "send", fake_email)
+    settings = Settings.from_env()
+    DeviceStore(settings.state_file).update("phone", "existing-token")
+    client = TestClient(create_app(settings))
+    assert send(client, device=None).json()["results"] == [
+        {"channel": "email", "status": "accepted"}
+    ]
+    assert send(client).json()["detail"] == "FCM channel is disabled"
+
+    monkeypatch.setenv("CHANNEL_EMAIL_ENABLED", "false")
+    monkeypatch.setenv("SMTP_SERVER_ADDRESS_PORT", "ignored invalid configuration")
+    client = TestClient(create_app())
+    assert send(client, device=None).json()["detail"] == "No eligible channels"

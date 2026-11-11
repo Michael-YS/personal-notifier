@@ -23,6 +23,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from server.email_notify import EmailSender
 
 
+def channel_enabled(name, default):
+    value = os.getenv(f"CHANNEL_{name}_ENABLED")
+    if value is None:
+        return default
+    value = value.strip().lower()
+    if value not in {"true", "false"}:
+        raise ValueError(f"CHANNEL_{name}_ENABLED must be true or false")
+    return value == "true"
+
+
 @dataclass(frozen=True)
 class Settings:
     send_key: str
@@ -32,13 +42,17 @@ class Settings:
     public_url: str = ""
     alexa_code_file: Path | None = None
     email_sender: EmailSender | None = None
+    fcm_enabled: bool = True
 
     @classmethod
     def from_env(cls):
-        keys = json.loads(os.environ["NOTIFY_DEVICE_KEYS"])
+        fcm_enabled = channel_enabled("FCM", True)
+        keys = json.loads(os.getenv("NOTIFY_DEVICE_KEYS", "{}"))
         send_key = os.environ["NOTIFY_SEND_KEY"]
-        if not isinstance(keys, dict) or not keys:
-            raise ValueError("NOTIFY_DEVICE_KEYS must be a nonempty JSON object")
+        if not isinstance(keys, dict) or (fcm_enabled and not keys):
+            raise ValueError(
+                "NOTIFY_DEVICE_KEYS must be a JSON object with devices when FCM is enabled"
+            )
         if any(not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name) for name in keys):
             raise ValueError("Invalid device name")
         secrets = [send_key, *keys.values()]
@@ -60,16 +74,23 @@ class Settings:
                 or url.fragment
             ):
                 raise ValueError("NOTIFY_PUBLIC_URL must be an HTTPS URL")
+        alexa_file = os.getenv("NOTIFY_ALEXA_CODE_FILE")
+        alexa_enabled = channel_enabled("ALEXA", bool(alexa_file))
+        if alexa_enabled and not alexa_file:
+            raise ValueError("Set NOTIFY_ALEXA_CODE_FILE when Alexa is enabled")
+        email_enabled = channel_enabled("EMAIL", None)
+        email_sender = EmailSender.from_env() if email_enabled is not False else None
+        if email_enabled and email_sender is None:
+            raise ValueError("Set all four SMTP notification settings when email is enabled")
         return cls(
             send_key,
             keys,
             Path(os.getenv("NOTIFY_STATE_FILE", "data/devices.json")),
             password,
             public_url,
-            Path(os.environ["NOTIFY_ALEXA_CODE_FILE"])
-            if os.getenv("NOTIFY_ALEXA_CODE_FILE")
-            else None,
-            EmailSender.from_env(),
+            Path(alexa_file) if alexa_enabled else None,
+            email_sender,
+            fcm_enabled,
         )
 
 
@@ -197,7 +218,7 @@ def create_app(settings=None, sender=None, alexa_sender=None, email_sender=None)
     settings = settings or Settings.from_env()
     store = DeviceStore(settings.state_file)
     push_keys = PushKeyStore(settings.state_file)
-    sender = sender or FcmSender()
+    sender = (sender or FcmSender()) if settings.fcm_enabled else None
     if alexa_sender is None and settings.alexa_code_file:
         from server.alexa import AlexaSender
 
@@ -245,10 +266,13 @@ def create_app(settings=None, sender=None, alexa_sender=None, email_sender=None)
         )
         include_email = notification.device is None and email_sender is not None
         if notification.device is None:
-            targets = store.registered()
+            targets = store.registered() if sender is not None else {}
             if not targets and not include_alexa and not include_email:
-                raise HTTPException(409, "No registered devices")
+                detail = "No registered devices" if sender is not None else "No eligible channels"
+                raise HTTPException(409, detail)
         else:
+            if sender is None:
+                raise HTTPException(409, "FCM channel is disabled")
             if notification.device not in settings.device_keys and not store.has(
                 notification.device
             ):
