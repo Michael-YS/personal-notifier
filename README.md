@@ -1,22 +1,22 @@
 # Personal Notify
 
-给自己用的 Android 推送工具：Python HTTP API → Firebase Cloud Messaging → Kotlin App。通知历史保存在手机本地，服务端只维护一个设备 JSON 文件；可选同步到 Alexa。
+给自己用的 Android 推送工具：Python HTTP API → Firebase Cloud Messaging → Kotlin App。通知历史保存在手机本地，服务端只维护一个设备 JSON 文件。广播可同步到电子邮件或 Alexa。
 
 ## 功能与限制
 
 - 原生 Kotlin Android App，Room 本地历史、已读状态、删除和扫码配对。
 - FastAPI 服务端，无数据库、无服务端通知历史。
 - 默认广播给所有已注册手机，也可以指定单台设备。
-- 高优先级广播同步到已配置的 Alexa；普通优先级只走 FCM。
+- 普通和高优先级广播都同步到已配置的邮件订阅者，高优先级广播还会同步到已配置的 Alexa。
 - 每台设备使用独立绑定凭证，发送密钥与配对管理密码独立。
 
-这是个人使用的轻量服务。必须使用**单进程、单 worker、单实例**，不能让多个进程共享状态文件。没有发送队列、收件回执或调用方幂等键，FCM 和 Alexa 都不保证即时或必达；服务返回 `accepted` 表示上游接受，并不代表设备收到。
+这是个人使用的轻量服务。必须使用**单进程、单 worker、单实例**，不能让多个进程共享状态文件。服务没有发送队列、收件回执或调用方幂等键。`accepted` 表示上游接受发送，实际收件状态需要另行确认。
 
 ## 目录
 
 | 路径 | 内容 |
 | --- | --- |
-| `server/` | API、JSON 设备状态、二维码配对、Alexa 通道及网页 |
+| `server/` | API、JSON 设备状态、二维码配对、Alexa 和 SMTP 通道及网页 |
 | `android/` | Android App、Room schema 和仪器测试 |
 | `tests/` | 使用假发送器的服务端测试 |
 | `deploy/` | Docker Compose 与 Nginx 示例 |
@@ -57,6 +57,10 @@ uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
 | `NOTIFY_PUBLIC_URL` | 外部 HTTPS 根地址，扫码配对时必需 |
 | `NOTIFY_PAIR_PASSWORD` | 独立的管理密码，至少 16 字符；留空禁用网页登录、配对和创建发送密钥 |
 | `NOTIFY_ALEXA_CODE_FILE` | 可选，Alexa access code 文件路径 |
+| `SMTP_SERVER_ADDRESS_PORT` | 可选，SMTP 主机名或 IP 和端口，例如 `smtp.example.com:587` |
+| `SMPT_USERNAME` | SMTP 登录账号，同时用作发件人地址 |
+| `SMTP_PASSWORD` | SMTP 登录密码 |
+| `SUBSCRIBER_EMAIL` | 收件人列表，例如 `[a@example.com, b@example.com]` |
 
 `.env` 中的设备 JSON 应用单引号包裹，例如 `NOTIFY_DEVICE_KEYS='{"my-phone":"独立的随机密钥"}'`。设备名只能包含字母、数字、下划线和短横线，长度 1–64。即使主要使用扫码配对，当前配置也要求至少一个静态设备；未注册的静态设备不会参与广播。
 
@@ -96,7 +100,19 @@ API 调用方仍可调用 `POST /push-keys`，JSON 请求体为 `{"password":"�
 
 这些密钥可替代调用方的 `NOTIFY_SEND_KEY`，使用相同的 Bearer 鉴权和发送权限；不能用来绑定设备。原有环境变量密钥和其他已创建密钥继续有效。服务端仅将 SHA-256 摘要原子写入设备状态文件旁的 `<设备状态文件名去掉扩展名>.push-keys.json`，应与设备状态一起持久化并保密。当前没有网页撤销功能；需要撤销全部网页创建的密钥时，停止服务、删除该文件后重启（不影响 `NOTIFY_SEND_KEY`）。
 
-设置调用方环境变量 `NOTIFY_URL`（你的 HTTPS 根地址）和 `NOTIFY_SEND_KEY`：
+Linux 上可用 [Bash 脚本](scripts/notify.sh) 发送通知。脚本需要 `curl` 和 Python 3。首次配置时复制示例，再填入完整接口地址和推送密钥，值不加引号。
+
+```bash
+cp -n scripts/.notify.env.example scripts/.notify.env
+```
+
+```bash
+bash scripts/notify.sh --title '备份完成' --body '今晚的备份已上传' --source backup-server --urgent false
+```
+
+`--help` 列出所有参数。脚本打印服务端响应，仅当状态为 `accepted` 时返回退出码 0。
+
+也可用 Python 调用。先设置 `NOTIFY_URL`（HTTPS 根地址）和 `NOTIFY_SEND_KEY`。
 
 ```python
 import json
@@ -123,13 +139,13 @@ with urllib.request.urlopen(request, timeout=30) as response:
 
 | 请求 | 发送目标 |
 | --- | --- |
-| 省略 `device`，`urgent: true`（默认） | 所有已注册手机 + 已配置的 Alexa |
-| 省略 `device`，`urgent: false` | 所有已注册手机，仅 FCM |
+| 省略 `device`，`urgent: true`（默认） | 所有已注册手机、已配置的邮件订阅者和 Alexa |
+| 省略 `device`，`urgent: false` | 所有已注册手机和已配置的邮件订阅者 |
 | 指定 `device` | 仅指定手机，优先级由 `urgent` 决定 |
 
 `title` 为 1–200 字符、`body` 为 1–2000 字符、`source` 最多 100 字符。内部 data 消息还有 3500 字节 UTF-8 JSON 上限。`ttl_seconds` 默认 3600，范围 0–2419200；0 表示无法立即投递就丢弃。未知字段被拒绝。
 
-广播返回 HTTP 200 后仍须检查 `status`：`accepted` 全部被上游接受、`partial` 部分成功、`failed` 全部失败。数量包含手机和 Alexa。没有可发送目标返回 409；仅配置 Alexa 且没有注册手机时，高优先级广播可走 Alexa，普通优先级仍返回 409。
+广播返回 HTTP 200 后仍须检查 `status`：`accepted` 全部被上游接受、`partial` 部分成功、`failed` 全部失败。数量包含手机、邮件订阅者和 Alexa。没有可发送目标时返回 409。没有已注册手机时，已配置的邮件和符合优先级的 Alexa 仍可发送。
 
 完整响应、鉴权和错误处理见 [AGENT_NOTIFY.md](AGENT_NOTIFY.md)。`GET /healthz` 不需要鉴权，仅检查服务进程，不检查凭据、上游或设备状态。
 
@@ -139,6 +155,12 @@ with urllib.request.urlopen(request, timeout=30) as response:
 
 该通道通过第三方服务发送，提示方式由 Skill 和关联 Amazon 账号决定。只有高优先级广播会调用它，指定手机不会调用。Alexa 不共享手机的 TTL 和消息 ID 去重机制；失败不自动重试。使用前查看供应商的[限额与隐私说明](https://www.thomptronics.com/about/notify-me/faq)，避免发送机密正文。
 
+## 可选：邮件提醒
+
+在 `.env` 中同时配置上表的四个 SMTP 字段后重启服务。使用 Compose 时需要重新创建容器以加载新配置。全部留空即可禁用邮件提醒。端口 `465` 使用隐式 TLS，其他端口要求 STARTTLS，连接会验证服务器证书。使用 IP 地址时，证书必须覆盖该 IP。
+
+邮件使用通知的标题和正文。每个收件人都计入广播结果，API 响应和邮件头均隐藏订阅者地址。SMTP 接受邮件后由邮件服务器负责后续投递。邮件通道没有 TTL 或自动重试。
+
 ## 验证与 CI
 
 ```sh
@@ -147,7 +169,7 @@ uv run ruff check server tests
 uv run ruff format --check server tests
 ```
 
-服务端测试不访问 Google 或 Alexa，覆盖鉴权、状态恢复、一次性配对、并发兑换、广播与优先级路由等。
+服务端测试使用模拟的 Google、Alexa 和 SMTP 上游，覆盖鉴权、状态恢复、一次性配对、并发兑换、广播与优先级路由等。
 
 无需 Firebase 配置的 Android 编译检查：
 

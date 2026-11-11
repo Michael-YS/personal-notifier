@@ -20,6 +20,8 @@ from firebase_admin import exceptions, messaging
 from google.auth.exceptions import GoogleAuthError
 from pydantic import BaseModel, ConfigDict, Field
 
+from server.email_notify import EmailSender
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -29,6 +31,7 @@ class Settings:
     pair_password: str = ""
     public_url: str = ""
     alexa_code_file: Path | None = None
+    email_sender: EmailSender | None = None
 
     @classmethod
     def from_env(cls):
@@ -66,6 +69,7 @@ class Settings:
             Path(os.environ["NOTIFY_ALEXA_CODE_FILE"])
             if os.getenv("NOTIFY_ALEXA_CODE_FILE")
             else None,
+            EmailSender.from_env(),
         )
 
 
@@ -187,7 +191,7 @@ class FcmSender:
         )
 
 
-def create_app(settings=None, sender=None, alexa_sender=None):
+def create_app(settings=None, sender=None, alexa_sender=None, email_sender=None):
     from server.push_keys import PushKeyStore
 
     settings = settings or Settings.from_env()
@@ -198,6 +202,8 @@ def create_app(settings=None, sender=None, alexa_sender=None):
         from server.alexa import AlexaSender
 
         alexa_sender = AlexaSender(settings.alexa_code_file)
+    if email_sender is None:
+        email_sender = settings.email_sender
     app = FastAPI(title="Personal Notify", docs_url=None, redoc_url=None, openapi_url=None)
     from server.pairing import install_pairing
 
@@ -237,9 +243,10 @@ def create_app(settings=None, sender=None, alexa_sender=None):
         include_alexa = (
             notification.device is None and notification.urgent and alexa_sender is not None
         )
+        include_email = notification.device is None and email_sender is not None
         if notification.device is None:
             targets = store.registered()
-            if not targets and not include_alexa:
+            if not targets and not include_alexa and not include_email:
                 raise HTTPException(409, "No registered devices")
         else:
             if notification.device not in settings.device_keys and not store.has(
@@ -290,15 +297,24 @@ def create_app(settings=None, sender=None, alexa_sender=None):
             }
 
         # Bound concurrent upstream requests; a failed device must not stop the others.
-        with ThreadPoolExecutor(max_workers=min(8, len(targets) + include_alexa)) as pool:
+        with ThreadPoolExecutor(
+            max_workers=min(8, len(targets) + include_alexa + include_email)
+        ) as pool:
             alexa_future = (
                 pool.submit(alexa_sender.send, notification.title, notification.body)
                 if include_alexa
                 else None
             )
+            email_future = (
+                pool.submit(email_sender.send, notification.title, notification.body)
+                if include_email
+                else None
+            )
             results = list(pool.map(deliver, targets.items()))
             if alexa_future:
                 results.append(alexa_future.result())
+            if email_future:
+                results.extend(email_future.result())
         accepted = sum(result["status"] == "accepted" for result in results)
         return {
             "id": notification_id,

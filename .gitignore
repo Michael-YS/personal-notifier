@@ -9,6 +9,7 @@
 .env
 .env.*
 !.env.example
+.notify.env
 data/
 secrets/
 android/local.properties

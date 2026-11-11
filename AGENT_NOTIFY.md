@@ -12,7 +12,7 @@
 | 鉴权 | `Authorization: Bearer <NOTIFY_SEND_KEY>` |
 | 健康检查 | `GET /healthz`，无需鉴权 |
 
-调用方只需要发送密钥，不需要手机绑定密钥、FCM token 或 Firebase 服务账号私钥。发送密钥可以向所有已配置设备发送通知。
+调用方只需要发送密钥。发送密钥可用于向已注册手机和已启用的广播通道发送通知。
 
 自建服务的发送密钥可保存在根目录 `.env` 的 `NOTIFY_SEND_KEY` 中。只在获得用户授权的环境中读取。其他机器通过环境变量或该机器的秘密管理工具配置 `NOTIFY_SEND_KEY`。
 
@@ -30,9 +30,9 @@
 }
 ```
 
-- `title`、`body` 必填。省略 `device`（或传 `null`）默认广播给本次请求开始时所有已注册 FCM token 的设备，仅当 `urgent: true` 时向已配置的 Alexa 通道发送一次通知；尚未完成注册或已清理失效 token 的设备跳过。指定 `"device": "my-phone"` 则只发送给该手机，不发 Alexa。空字符串不是广播，会返回 422。
+- `title`、`body` 必填。省略 `device`（或传 `null`）默认广播给本次请求开始时所有已注册 FCM token 的设备和已配置的邮件订阅者。`urgent: true` 时还会向已配置的 Alexa 通道发送一次通知。尚未完成注册或已清理失效 token 的设备跳过。指定 `"device": "my-phone"` 则只发送给该手机。空字符串会返回 422。
 - `title` 为 1–200 字符，`body` 为 1–2000 字符，`source` 最多 100 字符，默认空字符串。服务还限制内部 data 消息的 UTF-8 JSON 大小为 3500 字节；中文和 emoji 占多个字节，正文应简短。
-- `urgent` 默认为 `true`，使用 FCM high priority；`false` 使用 normal priority。广播时只有 `true` 才同步发送 Alexa，`false` 只走 FCM；省略 `urgent` 等同于 `true`。只为值得提醒用户的事件发送通知，避免循环刷屏。
+- `urgent` 默认为 `true`，使用 FCM high priority；`false` 使用 normal priority。两种优先级的广播都会发送邮件，只有 `true` 的广播会发送 Alexa。只为值得提醒用户的事件发送通知，避免循环刷屏。
 - `ttl_seconds` 默认 3600，范围 0–2419200。过期的离线通知可能被丢弃；0 表示不能立即投递就丢弃。
 - 未定义的字段会被拒绝。当前不支持附件、定时发送或调用方指定消息 ID。
 
@@ -62,11 +62,23 @@
 }
 ```
 
-广播 HTTP 200 表示已处理各目标的发送尝试，必须检查响应 `status`：`accepted` 全部被上游接受，`partial` 部分成功，`failed` 全部未确认成功。`accepted_count`、`failed_count` 包含手机和 Alexa 通道。手机失败项的 `error` 为 `registration_expired` 或 `fcm_error`；失效 token 会清理，但扫码配对凭证保留。没有已注册手机且本次请求不发送 Alexa 时返回 409（包括普通优先级请求，即使已配置 Alexa）。广播使用相同通知 ID，返回每个设备名的结果；多个设备名登记了同一 App token 时，本地历史仍按通知 ID 去重。
+广播 HTTP 200 表示已处理各目标的发送尝试，必须检查响应 `status`：`accepted` 全部被上游接受，`partial` 部分成功，`failed` 全部未确认成功。`accepted_count`、`failed_count` 包含手机、邮件订阅者和 Alexa。手机失败项的 `error` 为 `registration_expired` 或 `fcm_error`；失效 token 会清理，但扫码配对凭证保留。本次广播没有可发送的目标时返回 409。广播使用相同通知 ID，返回每个设备名的结果；多个设备名登记了同一 App token 时，本地历史仍按通知 ID 去重。
 
 Alexa 的结果没有 `device` 字段，使用 `channel: alexa`，例如 `{"channel":"alexa","status":"accepted"}`。失败时 `error` 为 `alexa_rate_limited`、`alexa_rejected`、`alexa_timeout` 或 `alexa_network_error`，上游 HTTP 拒绝还包含 `http_status`。超时的实际投递结果可能未知，不能自动重发。调用方不需要 Alexa access code；它只保存在服务器，只通过服务发送密钥调用 `/notify`。
 
-上游接受发送不代表手机确认收到或 Echo 已亮灯。按结果向用户报告接受数量和失败目标，只有用户确认后才能报告已收到。`/healthz` 只检查服务进程，不检查 FCM、Alexa、设备绑定或手机在线状态。
+邮件每位收件人对应一项 `channel: email`，不返回地址。SMTP 接受邮件时返回 `accepted`，收件人被 SMTP 拒绝时返回 `email_rejected`，其余 SMTP 投递错误返回 `email_error`。邮件通道忽略 `ttl_seconds`。
+
+按结果向用户报告上游接受数量和失败目标。手机收到、Echo 亮灯或邮件进入收件箱需另行确认。`/healthz` 只检查服务进程。
+
+## Linux Bash 调用示例
+
+将 [配置示例](scripts/.notify.env.example) 复制为 [notify.sh](scripts/notify.sh) 同目录的 `.notify.env`，填入完整的 `NOTIFY_ENDPOINT`（包括 `/notify`）和 `NOTIFY_PUSH_KEY`，值不加引号。需要 `curl` 和 Python 3。
+
+```bash
+bash scripts/notify.sh --title '任务完成' --body '测试通过，结果已保存。' --source coding-agent
+```
+
+可选参数为 `--source`、`--device`、`--urgent true|false` 和 `--ttl-seconds`。脚本打印响应，只有 `accepted` 返回退出码 0。
 
 ## Python 调用示例（标准库）
 
@@ -136,7 +148,7 @@ uv run --env-file .env python send_notify.py
 | 502 / 其他 5xx | 服务或上游异常，报告失败；必要时由获授权的运维 agent 检查服务。广播的逐设备上游失败在 HTTP 200 的 `results` 中报告，也必须检查。 |
 | 网络错误或超时 | 结果可能未知，勿声称未投递或自动重复发送。 |
 
-服务没有发送队列、客户端幂等键或收件回执。每次请求生成新 ID，超时后重发可能产生重复通知。App 仅对相同 ID 去重。广播部分失败时不要重发整个广播；失败手机确需重试则指定其设备名，避免其他手机和 Alexa 再次收到。当前 API 不提供 Alexa 单独重试接口，不能把 `alexa` 当设备名重试。广播最多并发 8 个上游请求，大量设备可能超过调用方或代理超时；超时后的结果仍可能未知。需要重试时说明重复风险并限制次数。
+服务没有发送队列、客户端幂等键或收件回执。每次请求生成新 ID，超时后重发可能产生重复通知。App 仅对相同 ID 去重。广播部分失败时不要重发整个广播；失败手机确需重试则指定其设备名，避免其他目标再次收到。Alexa 和邮件只能通过广播发送。广播最多并发 8 个上游请求，大量设备可能超过调用方或代理超时；超时后的结果仍可能未知。需要重试时说明重复风险并限制次数。
 
 Alexa 使用 Thomptronics Notify Me Skill 的通知通道，目标是亮灯提示、由用户询问后播放，而非直接语音播报。其 [FAQ](https://www.thomptronics.com/about/notify-me/faq) 标明每 5 分钟最多 5 条，并保留第三方消息日志 30 天。避免高频进度通知；机密内容不要放进默认广播正文。FCM 的 `ttl_seconds`、优先级和消息 ID 不会传递给 Notify Me，Alexa 侧不共享手机的过期和去重机制。
 
