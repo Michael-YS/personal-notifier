@@ -97,7 +97,7 @@ class Settings:
 class DeviceStore:
     def __init__(self, path: Path):
         self.path = path
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.devices = json.loads(path.read_text("utf-8")) if path.exists() else {}
         if not isinstance(self.devices, dict) or any(
             not isinstance(value, dict) or not isinstance(value.get("token"), str)
@@ -114,8 +114,10 @@ class DeviceStore:
         with self.lock:
             return {name: value["token"] for name, value in self.devices.items() if value["token"]}
 
-    def update(self, name, token):
+    def update(self, name, token, *, paired_key=None):
         with self.lock:
+            if paired_key is not None and not self.check_key(name, paired_key):
+                raise HTTPException(401, "Invalid credentials")
             updated = dict(self.devices)
             updated[name] = {
                 **updated.get(name, {}),
@@ -141,6 +143,22 @@ class DeviceStore:
                 raise HTTPException(409, "Device name already exists")
             updated = dict(self.devices)
             updated[name] = {"token": "", "key_hash": hashlib.sha256(key.encode()).hexdigest()}
+            self._save(updated)
+
+    def paired_devices(self):
+        with self.lock:
+            return [
+                {"name": name, "registered": bool(value["token"])}
+                for name, value in sorted(self.devices.items())
+                if value.get("key_hash")
+            ]
+
+    def revoke_pairing(self, name):
+        with self.lock:
+            if not self.devices.get(name, {}).get("key_hash"):
+                raise HTTPException(404, "Unknown paired device")
+            updated = dict(self.devices)
+            del updated[name]
             self._save(updated)
 
     def remove_if_matching(self, name, token):
@@ -244,13 +262,11 @@ def create_app(settings=None, sender=None, alexa_sender=None, email_sender=None)
         key = settings.device_keys.get(name)
         if key is not None:
             authenticate(authorization, key)
-        elif (
-            not authorization
-            or not authorization.startswith("Bearer ")
-            or not store.check_key(name, authorization[7:])
-        ):
+            store.update(name, registration.token)
+        elif not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(401, "Invalid credentials")
-        store.update(name, registration.token)
+        else:
+            store.update(name, registration.token, paired_key=authorization[7:])
         return {"device": name, "registered": True}
 
     @app.post("/notify")

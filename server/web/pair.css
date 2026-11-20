@@ -48,6 +48,13 @@ button:disabled { cursor: wait; background: #718fbf; }
 #status[data-state="error"], #push-status[data-state="error"], #login-status[data-state="error"], #account-status { color: #ab3443; }
 #status[data-state="ready"], #push-status[data-state="ready"] { color: #236550; }
 .push-panel { margin-top: 30px; padding: 30px; background: white; border: 1px solid #dce6f3; border-radius: 22px; }
+.management-heading, .management-list li, .management-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.management-heading, .management-list li { justify-content: space-between; }
+.management-list { padding: 0; list-style: none; }
+.management-list li { border-bottom: 1px solid #dce6f3; padding: 10px 0; }
+.management-list span { overflow-wrap: anywhere; min-width: 0; }
+.management-heading button, .management-actions button { width: auto; margin: 0; padding: 8px 12px; font-size: 13px; }
+.management-actions .revoke { background: #a52232; }
 #push-key { font-family: monospace; }
 #push-help { margin-top: 8px; }
 .scan { background: #f8faff; border-left: 1px solid #e4ebf5; padding: 38px 34px 26px; text-align: center; }

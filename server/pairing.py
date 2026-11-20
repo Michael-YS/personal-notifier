@@ -6,13 +6,16 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import urlencode, urlsplit
 
 import qrcode
 import qrcode.image.svg
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+KeyName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
 
 
 class AdminRequest(BaseModel):
@@ -27,6 +30,15 @@ class ManagementRequest(BaseModel):
 
 class PairRequest(ManagementRequest):
     device: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+
+
+class CreatePushKeyRequest(ManagementRequest):
+    name: KeyName = "Push key"
+
+
+class RenamePushKeyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: KeyName
 
 
 class RedeemRequest(BaseModel):
@@ -162,10 +174,46 @@ def install_pairing(app, settings, store, push_keys):
         response.delete_cookie(cookie_name, path="/", secure=True, httponly=True, samesite="strict")
 
     @app.post("/push-keys", status_code=201)
-    def create_push_key(body: ManagementRequest, request: Request):
+    def create_push_key(body: CreatePushKeyRequest, request: Request):
         with lock:
             authenticate_management(request, body.password)
-            return {"push_key": push_keys.create()}
+            key_id, key = push_keys.create(body.name)
+            return {"id": key_id, "push_key": key}
+
+    @app.get("/push-keys")
+    def list_push_keys(request: Request):
+        with lock:
+            authenticate_management(request, None)
+            return push_keys.list_keys()
+
+    @app.patch("/push-keys/{key_id}", status_code=204)
+    def rename_push_key(key_id: str, body: RenamePushKeyRequest, request: Request):
+        with lock:
+            authenticate_management(request, None)
+            if not push_keys.change(key_id, name=body.name):
+                raise HTTPException(404, "Unknown push key")
+
+    @app.delete("/push-keys/{key_id}", status_code=204)
+    def revoke_push_key(key_id: str, request: Request):
+        with lock:
+            authenticate_management(request, None)
+            if not push_keys.change(key_id):
+                raise HTTPException(404, "Unknown push key")
+
+    @app.get("/paired-devices")
+    def list_paired_devices(request: Request):
+        with lock:
+            authenticate_management(request, None)
+            return store.paired_devices()
+
+    @app.delete("/paired-devices/{name}", status_code=204)
+    def revoke_paired_device(name: str, request: Request):
+        with lock:
+            authenticate_management(request, None)
+            store.revoke_pairing(name)
+            for code, (device, _) in list(tickets.items()):
+                if device == name:
+                    del tickets[code]
 
     @app.post("/pairings")
     def create_pairing(body: PairRequest, request: Request):

@@ -68,6 +68,7 @@ const pushButton = document.querySelector('#create-push-key');
 const pushResult = document.querySelector('#push-result');
 const pushKey = document.querySelector('#push-key');
 const pushStatus = document.querySelector('#push-status');
+const pushKeyName = document.querySelector('#push-key-name');
 
 function showPushStatus(message, state) {
   pushStatus.textContent = message;
@@ -76,22 +77,31 @@ function showPushStatus(message, state) {
 
 pushForm.addEventListener('submit', async (event) => {
   event.preventDefault();
+  const name = pushKeyName.value.trim();
+  if (!name) {
+    showPushStatus('请输入密钥名称。', 'error');
+    pushKeyName.focus();
+    return;
+  }
   pushButton.disabled = true;
   pushButton.textContent = '正在创建…';
   showPushStatus('正在创建发送密钥…', 'loading');
   try {
-    const response = await adminRequest('/push-keys', {});
+    const response = await adminRequest('/push-keys', {name});
     const errors = {429: '请求太频繁，请一分钟后再试。', 503: '管理功能尚未配置，请检查服务器设置。'};
     if (!response.ok) throw new Error(errors[response.status] || '创建失败，请稍后再试。');
     const data = await response.json();
     pushKey.value = data.push_key;
+    pushResult.dataset.keyId = data.id;
     pushResult.hidden = false;
+    pushForm.reset();
     showPushStatus('密钥已创建，请立即复制保存。', 'ready');
+    await loadKeys();
   } catch (error) {
     showPushStatus(error instanceof TypeError ? '连接中断，无法确认创建结果；如已显示旧密钥，它仍可使用。' : error.message || '创建失败，请重试。', 'error');
   } finally {
     pushButton.disabled = false;
-    pushButton.textContent = 'Create push_key';
+    pushButton.textContent = '创建推送密钥';
   }
 });
 
@@ -118,6 +128,99 @@ async function adminRequest(path, body, method = 'POST') {
   }
   return response;
 }
+
+function managementList(path, listId, refreshId, statusId, isKey) {
+  const list = document.getElementById(listId);
+  const refresh = document.getElementById(refreshId);
+  const message = document.getElementById(statusId);
+  let requestNumber = 0;
+
+  async function load() {
+    const current = ++requestNumber;
+    refresh.disabled = true;
+    try {
+      const response = await adminRequest(path, undefined, 'GET');
+      if (!response.ok) throw new Error();
+      const items = await response.json();
+      if (current !== requestNumber) return;
+      list.replaceChildren(...items.map(renderItem));
+      message.textContent = items.length ? '' : (isKey ? '暂无推送密钥。' : '暂无已绑定设备。');
+    } catch {
+      if (current === requestNumber) message.textContent = '加载失败，请刷新重试。';
+    } finally {
+      if (current === requestNumber) refresh.disabled = false;
+    }
+  }
+
+  function renderItem(item) {
+    const row = document.createElement('li');
+    const label = document.createElement('span');
+    label.textContent = isKey ? item.name : `${item.name} · ${item.registered ? '已注册' : '未注册'}`;
+    const actions = document.createElement('div');
+    actions.className = 'management-actions';
+    const url = path + '/' + encodeURIComponent(isKey ? item.id : item.name);
+
+    async function change(method, body) {
+      const buttons = actions.querySelectorAll('button');
+      buttons.forEach((button) => { button.disabled = true; });
+      try {
+        const response = await adminRequest(url, body, method);
+        if (response.status === 404) {
+          await load();
+          message.textContent = '此项目已不存在，列表已刷新。';
+          return;
+        }
+        if (!response.ok) throw new Error();
+        if (isKey && method === 'DELETE' && pushResult.dataset.keyId === item.id) {
+          pushKey.value = '';
+          pushResult.hidden = true;
+          showPushStatus('', 'ready');
+        }
+        await load();
+      } catch {
+        message.textContent = '无法确认操作结果，请刷新列表。';
+      } finally {
+        buttons.forEach((button) => { button.disabled = false; });
+      }
+    }
+
+    function addAction(text, run) {
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.textContent = text;
+      action.setAttribute('aria-label', text + ' ' + item.name);
+      action.addEventListener('click', run);
+      actions.append(action);
+      return action;
+    }
+
+    if (isKey) {
+      addAction('重命名', () => {
+        const name = window.prompt('输入新的密钥名称', item.name)?.trim();
+        if (name === undefined || name === item.name) return;
+        if (!name || [...name].length > 80) {
+          message.textContent = '密钥名称须为 1–80 个字符。';
+          return;
+        }
+        void change('PATCH', {name});
+      });
+    }
+    addAction('撤销', () => {
+      const effect = isKey ? '使用此密钥的调用方将无法继续发送通知。' : '此设备需要重新配对才能接收通知。';
+      if (window.confirm(`撤销「${item.name}」？${effect}`)) void change('DELETE');
+    }).className = 'revoke';
+    row.append(label, actions);
+    return row;
+  }
+
+  refresh.addEventListener('click', load);
+  return load;
+}
+
+const loadDevices = managementList('/paired-devices', 'paired-devices-list', 'refresh-devices', 'devices-status', false);
+const loadKeys = managementList('/push-keys', 'push-keys-list', 'refresh-keys', 'keys-status', true);
+void loadDevices();
+void loadKeys();
 
 document.querySelector('#logout').addEventListener('click', async () => {
   const logout = document.querySelector('#logout');

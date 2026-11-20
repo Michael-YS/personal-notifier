@@ -1,3 +1,4 @@
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 
@@ -93,7 +94,7 @@ def test_disabled_admin(tmp_path):
 
 def test_atomic_write_failure_and_concurrent_creation(tmp_path, monkeypatch):
     store = PushKeyStore(tmp_path / "devices.json")
-    first = store.create()
+    _, first = store.create()
     original = store.path.read_text()
     with monkeypatch.context() as patch:
 
@@ -109,11 +110,72 @@ def test_atomic_write_failure_and_concurrent_creation(tmp_path, monkeypatch):
     with ThreadPoolExecutor(max_workers=4) as pool:
         keys = list(pool.map(lambda _: store.create(), range(8)))
     restarted = PushKeyStore(tmp_path / "devices.json")
-    assert all(restarted.check(key) for key in [first, *keys])
+    assert restarted.check(first)
+    assert all(restarted.check(key) for _, key in keys)
 
 
-@pytest.mark.parametrize("state", [{}, ["not-a-hash"], [123], ["g" * 64]])
+@pytest.mark.parametrize("state", [{"id": {}}, ["not-a-hash"], [123], ["g" * 64]])
 def test_invalid_key_state_fails_startup(tmp_path, state):
     (tmp_path / "devices.push-keys.json").write_text(json.dumps(state))
     with pytest.raises(ValueError, match="Invalid push key state"):
         PushKeyStore(tmp_path / "devices.json")
+
+
+def test_dashboard_management(gateway, monkeypatch):
+    _, sender, settings = gateway
+    legacy = "legacy-test-key"
+    path = settings.state_file.with_name("devices.push-keys.json")
+    path.write_text(json.dumps([hashlib.sha256(legacy.encode()).hexdigest()]))
+    headers = {"X-Notify-Request": "dashboard"}
+    client = TestClient(create_app(settings, sender), base_url=settings.public_url)
+    assert client.get("/push-keys", headers=headers).status_code == 401
+    assert client.get("/paired-devices", headers=headers).status_code == 401
+    assert (
+        client.post(
+            "/session", headers=headers, json={"password": settings.pair_password}
+        ).status_code
+        == 201
+    )
+    (old,) = client.get("/push-keys", headers=headers).json()
+    assert set(old) == {"id", "name"}
+    assert old["name"] == "Push key 1"
+    assert PushKeyStore(settings.state_file).check(legacy)
+    created = client.post("/push-keys", headers=headers, json={"name": " Build "}).json()
+    url = f"/push-keys/{created['id']}"
+    assert client.get("/push-keys", headers=headers).json()[-1]["name"] == "Build"
+    assert client.delete(url).status_code == 403
+    assert client.patch(url, headers=headers, json={"name": "CI"}).status_code == 204
+    assert PushKeyStore(settings.state_file).list_keys()[-1]["name"] == "CI"
+    assert client.delete(url, headers=headers).status_code == 204
+    assert (
+        client.post(
+            "/notify",
+            json={"title": "test", "body": "test"},
+            headers={"Authorization": f"Bearer {created['push_key']}"},
+        ).status_code
+        == 401
+    )
+    restored = PushKeyStore(settings.state_file)
+    assert not restored.check(created["push_key"])
+    assert restored.check(legacy)
+
+    monkeypatch.setattr("server.pairing.secrets.token_urlsafe", lambda _: "a" * 43)
+    assert client.post("/pairings", headers=headers, json={"device": "tablet"}).status_code == 200
+    binding = client.post("/pairings/redeem", json={"code": "a" * 43}).json()
+    auth = {"Authorization": f"Bearer {binding['key']}"}
+    assert client.get("/paired-devices", headers=headers).json() == [
+        {"name": "tablet", "registered": False}
+    ]
+    assert (
+        client.put("/devices/tablet", headers=auth, json={"token": "fake-token"}).status_code == 200
+    )
+    assert client.get("/paired-devices", headers=headers).json() == [
+        {"name": "tablet", "registered": True}
+    ]
+    assert client.delete("/paired-devices/tablet", headers=headers).status_code == 204
+    assert client.get("/paired-devices", headers=headers).json() == []
+    restarted = TestClient(create_app(settings, sender))
+    assert (
+        restarted.put("/devices/tablet", headers=auth, json={"token": "fake-token"}).status_code
+        == 401
+    )

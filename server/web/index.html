@@ -18,7 +18,7 @@
     <main>
       <div class="intro">
         <h1>管理你的通知入口。</h1>
-        <p>添加设备，或为调用方创建发送密钥。</p>
+        <p>管理已绑定设备和发送密钥。</p>
         <p id="account-status" role="status" aria-live="polite"></p>
       </div>
       <div class="pairing-panel">
@@ -58,11 +58,27 @@
         <li><span class="step-number">2</span><div><strong>在 App 中扫描</strong><p>确认服务地址，保存绑定。</p></div></li>
         <li><span class="step-number">3</span><div><strong>开始接收通知</strong><p>App 显示「已绑定」即可使用。</p></div></li>
       </ol>
+      <section class="push-panel" aria-labelledby="devices-title">
+        <div class="management-heading">
+          <h2 id="devices-title">已绑定设备</h2>
+          <button id="refresh-devices" type="button">刷新设备</button>
+        </div>
+        <p class="section-description">显示通过二维码绑定的设备。撤销后需要重新配对。</p>
+        <ul id="paired-devices-list" class="management-list"></ul>
+        <p id="devices-status" role="status"></p>
+      </section>
       <section class="push-panel" aria-labelledby="push-title">
-        <h2 id="push-title">创建 push_key</h2>
+        <div class="management-heading">
+          <h2 id="push-title">推送密钥</h2>
+          <button id="refresh-keys" type="button">刷新密钥</button>
+        </div>
+        <ul id="push-keys-list" class="management-list"></ul>
+        <p id="keys-status" role="status"></p>
         <p class="section-description">为调用方创建发送密钥，用于 /notify 的 Bearer 鉴权。拥有密钥即可向所有设备发送通知，请妥善保管。</p>
         <form id="push-key-form">
-          <button id="create-push-key" type="submit">Create push_key</button>
+          <label for="push-key-name">新密钥名称</label>
+          <input id="push-key-name" required maxlength="80" autocomplete="off">
+          <button id="create-push-key" type="submit">创建推送密钥</button>
         </form>
         <p id="push-status" role="status" aria-live="polite" aria-atomic="true"></p>
         <div id="push-result" hidden>
